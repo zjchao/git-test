@@ -1,0 +1,256 @@
+day114
+
+内容回顾：
+	1. 谈谈你对rest api 的认识。
+		原来web应用程序时，根据URL不同定位到不同视图函数处理。
+		rest是一种规范：面向资源
+			http://api.luffycity.com/v1/users
+			- 协议：
+				http
+				https
+			- 域名
+				api.luffycity.com 
+				www.luffycity.com/api
+			- 版本
+				
+			- url中是名词
+			- method不同执行不同函数：get/post/delete/put/patch
+			- 返回状态码：200/301/302/404/403/500
+			- 错误信息：
+				{
+				   msg: '用户名或密码错误'
+				}
+				def index(request):
+					ret = {'code':1000,'data':None}
+
+					return HttpResponse('xxx',status=200)
+			- 返回值：
+				http://api.luffycity.com/v1/users
+				http://api.luffycity.com/v1/users/1
+				
+			- 条件
+				http://api.luffycity.com/v1/users?page=1&size=10
+				
+				PS: 主键ID体现在URL上
+			- hyperlink
+				{
+					id: '老司机',
+					age: 18,
+					group: http://www.luffycti.com/api/v1/group/1/
+				}
+	2. django rest framework
+		- 10个组件
+		- 认证/权限/节流/序列化
+		- 知识：
+			- 封装，认证。
+			- 配置，中间件配置；
+		- 问题：发送邮件、短信、微信提醒
+		
+	3. 版本：
+		- http://www.luffycity.com/api/v1/users 
+		- http://www.luffycity.com/api/v2/users 
+今日内容：
+	1. ContentType
+	2. CORS
+	3. Git
+	
+内容详细：
+	1. ContentType
+		背景：学位课、专题课、价格策略
+		问题1：设计表结构。
+				from django.db import models
+				from django.contrib.contenttypes.models import ContentType
+				from django.contrib.contenttypes.fields import GenericForeignKey,GenericRelation
+
+
+				class DegreeCourse(models.Model):
+					name = models.CharField(max_length=32)
+
+				class Course(models.Model):
+					name = models.CharField(max_length=32)
+
+					# 数据库不生成，只用于链表查询
+					policy_list = GenericRelation("PricePolicy")
+
+				class PricePolicy(models.Model):
+					content_type = models.ForeignKey(ContentType)
+					object_id = models.PositiveIntegerField()
+
+					# 不在数据库中生成，只用于帮助你做数据操作
+					content_object = GenericForeignKey('content_type', 'object_id')
+
+					period = models.CharField(max_length=32)
+					price = models.FloatField()
+					
+					
+		问题2：为专题课1添加3个价格策略
+				# course_obj内部包含：id=1,表名称=course
+				course_obj = models.Course.objects.get(id=1)
+				models.PricePolicy.objects.create(period='10', price=9.9, content_object=course_obj)
+				models.PricePolicy.objects.create(period='20', price=19.9, content_object=course_obj)
+				models.PricePolicy.objects.create(period='30', price=29.9, content_object=course_obj)
+				# course_obj内部包含：id=2,表名称=course
+				# course_obj = models.Course.objects.get(id=2)
+				# models.PricePolicy.objects.create(period='110', price=9.9, content_object=course_obj)
+				# models.PricePolicy.objects.create(period='120', price=19.9, content_object=course_obj)
+				# models.PricePolicy.objects.create(period='130', price=29.9, content_object=course_obj)
+
+
+				# degree_course_obj = models.DegreeCourse.objects.get(id=1)
+				# models.PricePolicy.objects.create(period='8', price=9.9, content_object=degree_course_obj)
+				# models.PricePolicy.objects.create(period='16', price=19.9, content_object=degree_course_obj)
+				# models.PricePolicy.objects.create(period='99', price=29.9, content_object=degree_course_obj)
+
+		问题3：显示所有的价格策略，并将其对应的课程名称显示。
+				
+				# policy_list = models.PricePolicy.objects.all()
+				# for obj in policy_list:
+				#     print(obj.period,obj.price,obj.content_object,obj.content_object.id,obj.content_object.name)
+
+			
+		问题4：给你课程ID，获取课程信息+该课程的所有价格策略
+				course_obj = models.Course.objects.get(id=2)
+				print(course_obj.id)
+				print(course_obj.name)
+				policy_list = course_obj.policy_list.all()
+				for item in policy_list:
+					print(item.price,item.period)
+				
+	
+	2. cors
+		目标：由api解决跨域，本质添加响应头。
+		
+		a. 基本跨域
+			api:
+				def service(request):
+					v1 = request.GET.get('v1')
+					v2 = request.GET.get('v2')
+					result = v1 + v2
+					obj =  HttpResponse(result)
+					# obj['Access-Control-Allow-Origin'] = 'http://localhost:63342,http://localhost:63343,'
+					obj['Access-Control-Allow-Origin'] = '*'
+					return obj
+			
+			ajax:
+				function getData() {
+					$.ajax({
+						url:'http://127.0.0.1:8000/service/?v1=横哥&v2=哼',
+						type:'GET',
+						success:function (arg) {
+							alert(arg);
+						}
+					})
+				}
+		
+		b. 自定义请求头：先预检允许头，再发起数据相关请求。
+			api:
+				
+				def service(request):
+					if request.method == 'OPTIONS':
+						print('进行预检')
+						obj = HttpResponse()
+						obj['Access-Control-Allow-Headers'] = 'k1'
+						obj['Access-Control-Allow-Origin'] = '*'
+						return obj
+					else:
+						v1 = request.GET.get('v1')
+						v2 = request.GET.get('v2')
+						result = v1 + v2
+						obj =  HttpResponse(result)
+						# obj['Access-Control-Allow-Origin'] = 'http://localhost:63342,http://localhost:63343,'
+						obj['Access-Control-Allow-Origin'] = '*'
+						return obj
+	
+			ajax:
+				function getData() {
+					$.ajax({
+						url:'http://127.0.0.1:8000/service/?v1=横哥&v2=哼',
+						type:'GET',
+						headers:{
+							k1:'v1'
+						},
+						success:function (arg) {
+							alert(arg);
+						}
+					})
+				}
+	
+		
+		c. 不寻常的方法：先预检允许方法，再发起数据相关请求。
+			api:
+				def service(request):
+					if request.method == 'OPTIONS':
+						obj = HttpResponse()
+						obj['Access-Control-Allow-Origin'] = '*'
+						obj['Access-Control-Allow-Methods'] = 'PUT'
+						return obj
+					else:
+						v1 = request.GET.get('v1')
+						v2 = request.GET.get('v2')
+						result = v1 + v2
+						obj =  HttpResponse(result)
+						# obj['Access-Control-Allow-Origin'] = 'http://localhost:63342,http://localhost:63343,'
+						obj['Access-Control-Allow-Origin'] = '*'
+						return obj
+			ajax:
+				function getData() {
+					$.ajax({
+						url:'http://127.0.0.1:8000/service/?v1=横哥&v2=哼',
+						type:'PUT',
+						success:function (arg) {
+							alert(arg);
+						}
+					})
+				}
+	
+	
+		简单请求和复杂请求：
+			1、请求方式：HEAD、GET、POST
+			2、请求头信息：
+				Accept
+				Accept-Language
+				Content-Language
+				Last-Event-ID
+				Content-Type 对应的值是以下三个中的任意一个
+										application/x-www-form-urlencoded
+										multipart/form-data
+										text/plain
+		 
+			注意：同时满足以上两个条件时，则是简单请求，否则为复杂请求
+	
+		应用：在django中间件中实现cors做跨域
+			
+	
+	3. git
+		软件，帮助我们做版本控制。
+		a. 安装：https://git-scm.com/downloads
+		b. 基本使用：
+			- 进入你想要管理的文件夹
+			- git init 
+			- git status 
+			- git add . 
+			- git commit -m '一定好好写'
+			
+			- git log 
+			- git reset --hard 23xdfu0lksdfousmner9xf
+			- git reflog 
+			- git reset --hard 23xdfu0lksdfousmner9xf
+	
+	
+			http://www.cnblogs.com/wupeiqi/p/7295372.html
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
